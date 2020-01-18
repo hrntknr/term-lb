@@ -5,12 +5,12 @@ global:
 zebra:
   config:
     enabled: true
-    url: unix:./run/client.api
+    url: unix:./run/router.api
     version: 6
     software-name: frr6
 neighbors:
   - config:
-      # neighbor-interface: client-lb1
+      # neighbor-interface: router-lb1
       neighbor-address: fd24::1
       peer-as: 65002
     transport:
@@ -18,7 +18,7 @@ neighbors:
         passive-mode: false
         local-address: fd24::2
   - config:
-      # neighbor-interface: client-lb2
+      # neighbor-interface: router-lb2
       neighbor-address: fd34::1
       peer-as: 65003
     transport:

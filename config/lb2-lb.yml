@@ -5,4 +5,4 @@ backends:
   listen: 8080
 
 lbNetwork:
-  network: "[ff02::1%wlp0s20f3]:3000"
+  network: "[ff02::1%lb2-lb1]:3000"

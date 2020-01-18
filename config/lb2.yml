@@ -18,7 +18,7 @@ neighbors:
         passive-mode: false
         local-address: fd13::2
   - config:
-      # neighbor-interface: lb2-client
+      # neighbor-interface: lb2-router
       neighbor-address: fd34::2
       peer-as: 65004
     transport:
