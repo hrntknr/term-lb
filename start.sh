@@ -42,11 +42,13 @@ ip netns exec server sysctl -w net.ipv6.conf.all.forwarding=1
 ip netns exec lb1 ip link set dev lo up
 ip netns exec lb1 ip link set lb1-server up
 ip netns exec lb1 ip link set lb1-router up
+ip netns exec lb1 ip link set lb1-lb2 up
 ip netns exec lb1 sysctl -w net.ipv6.conf.all.forwarding=1
 
 ip netns exec lb2 ip link set dev lo up
 ip netns exec lb2 ip link set lb2-server up
 ip netns exec lb2 ip link set lb2-router up
+ip netns exec lb2 ip link set lb2-lb1 up
 ip netns exec lb2 sysctl -w net.ipv6.conf.all.forwarding=1
 
 ip netns exec router ip link set dev lo up
@@ -134,6 +136,9 @@ ip netns exec lb2 $ZEBRA_PATH -A 127.0.0.1 -i $(pwd)/run/lb2_zebra.pid -z $(pwd)
 ip netns exec router $ZEBRA_PATH -A 127.0.0.1 -i $(pwd)/run/router_zebra.pid -z $(pwd)/run/router.api -d
 
 sleep 3
+
+ip netns exec server python3 ./server.py &
+echo $! > run/server_http.pid
 
 ip netns exec server ./gobgp/gobgpd -t yaml -f config/server.yml &
 echo $! > run/server.pid

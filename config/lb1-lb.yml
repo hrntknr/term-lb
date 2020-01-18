@@ -1,7 +1,7 @@
 backends:
 - hosts:
-  - 127.0.0.1
-  port: 80
+  - fd00::1
+  port: 8080
   listen: 8080
 
 lbNetwork:
