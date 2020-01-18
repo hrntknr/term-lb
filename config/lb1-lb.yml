@@ -6,3 +6,4 @@ backends:
 
 lbNetwork:
   network: "[ff02::1%lb1-lb2]:3000"
+  source: "[fd23::1%lb1-lb2]:3001"

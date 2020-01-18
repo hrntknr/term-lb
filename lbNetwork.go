@@ -10,7 +10,11 @@ func newLBNetwork(config LBNetworkConfig) (*LBNetwork, error) {
 	if err != nil {
 		return nil, err
 	}
-	sender, err := net.DialUDP("udp", nil, address)
+	source, err := net.ResolveUDPAddr("udp", config.Source)
+	if err != nil {
+		return nil, err
+	}
+	sender, err := net.DialUDP("udp", source, address)
 	if err != nil {
 		return nil, err
 	}
@@ -19,6 +23,8 @@ func newLBNetwork(config LBNetworkConfig) (*LBNetwork, error) {
 		return nil, err
 	}
 	return &LBNetwork{
+		config:   config,
+		source:   source.IP,
 		sender:   sender,
 		receiver: receiver,
 	}, nil
@@ -32,7 +38,9 @@ func (ln *LBNetwork) HandleFunc(handler func([]byte, net.IP)) {
 			if err != nil {
 				log.Printf("error: %s\n", err)
 			}
-			handler(buffer[:n], remote.IP)
+			if !remote.IP.Equal(ln.source) {
+				handler(buffer[:n], remote.IP)
+			}
 		}
 	}()
 }
@@ -43,6 +51,8 @@ func (ln *LBNetwork) Send(data []byte) error {
 }
 
 type LBNetwork struct {
+	config   LBNetworkConfig
+	source   net.IP
 	sender   *net.UDPConn
 	receiver *net.UDPConn
 }

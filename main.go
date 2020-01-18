@@ -2,14 +2,12 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"io/ioutil"
 	"log"
 	"net"
 	"os"
 	"os/signal"
 	"sync"
-	"time"
 
 	"golang.org/x/sys/unix"
 	"gopkg.in/yaml.v2"
@@ -30,6 +28,7 @@ type Backend struct {
 
 type LBNetworkConfig struct {
 	Network string `yaml:"network"`
+	Source  string `yaml:"source"`
 }
 
 func main() {
@@ -96,13 +95,7 @@ func (lb *lb) startListen() error {
 		return err
 	}
 	lbnet.HandleFunc(func(buf []byte, remote net.IP) {
-		fmt.Printf("HandleFunc: %d\n", len(buf))
 	})
-	go func() {
-		for range time.Tick(1 * time.Second) {
-			lbnet.Send([]byte("test"))
-		}
-	}()
 
 	go func() {
 		for {
