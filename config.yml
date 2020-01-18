@@ -1,0 +1,8 @@
+backends:
+- hosts:
+  - 127.0.0.1
+  port: 80
+  listen: 8080
+
+lbNetwork:
+  network: "[ff02::1%eth0]:3000"

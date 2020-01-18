@@ -1,0 +1,27 @@
+global:
+  config:
+    as: 65003
+    router-id: 192.168.0.3
+zebra:
+  config:
+    enabled: true
+    url: unix:./run/lb2.api
+    version: 6
+    software-name: frr6
+neighbors:
+  - config:
+      # neighbor-interface: lb2-server
+      neighbor-address: fd13::1
+      peer-as: 65001
+    transport:
+      config:
+        passive-mode: false
+        local-address: fd13::2
+  - config:
+      # neighbor-interface: lb2-client
+      neighbor-address: fd34::2
+      peer-as: 65004
+    transport:
+      config:
+        passive-mode: false
+        local-address: fd34::1
