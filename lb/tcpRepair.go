@@ -8,10 +8,14 @@ import "C"
 
 import (
 	"fmt"
+	"net"
 	"unsafe"
 )
 
 type TCPRepair struct {
+	Sport  uint16          `json:"sport"`
+	Daddr  net.IP          `json:"daddr"`
+	Dport  uint16          `json:"dport"`
 	Window TCPRepairWindow `json:"window"`
 	SndSeq int             `json:"snd_seq"`
 	RcvSeq int             `json:"rcv_seq"`
