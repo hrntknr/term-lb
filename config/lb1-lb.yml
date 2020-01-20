@@ -3,7 +3,11 @@ backends:
   - fd00::1
   port: 8080
   listen: 8080
-
+  vip: fd01::1
+  interface: lb1-router
 lbNetwork:
   network: "[ff02::1%lb1-lb2]:3000"
   source: "[fd23::1%lb1-lb2]:3001"
+  commands:
+    standby: ip netns exec lb2 ./gobgp/gobgp global rib del fd01::1/128 -a ipv6
+    active: ip netns exec lb2 ./gobgp/gobgp global rib add fd01::1/128 -a ipv6

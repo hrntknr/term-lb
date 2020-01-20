@@ -22,15 +22,13 @@ func newLBNetwork(config LBNetworkConfig) (*LBNetwork, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &LBNetwork{
+	ln := &LBNetwork{
 		config:   config,
 		source:   source.IP,
 		sender:   sender,
 		receiver: receiver,
-	}, nil
-}
-
-func (ln *LBNetwork) HandleFunc(handler func([]byte, net.IP)) {
+		handler:  []func([]byte, net.IP){},
+	}
 	go func() {
 		buffer := make([]byte, 1500)
 		for {
@@ -39,10 +37,17 @@ func (ln *LBNetwork) HandleFunc(handler func([]byte, net.IP)) {
 				log.Printf("error: %s\n", err)
 			}
 			if !remote.IP.Equal(ln.source) {
-				handler(buffer[:n], remote.IP)
+				for _, handler := range ln.handler {
+					handler(buffer[:n], remote.IP)
+				}
 			}
 		}
 	}()
+	return ln, nil
+}
+
+func (ln *LBNetwork) HandleFunc(handler func([]byte, net.IP)) {
+	ln.handler = append(ln.handler, handler)
 }
 
 func (ln *LBNetwork) Send(data []byte) error {
@@ -55,4 +60,5 @@ type LBNetwork struct {
 	source   net.IP
 	sender   *net.UDPConn
 	receiver *net.UDPConn
+	handler  []func([]byte, net.IP)
 }
