@@ -153,29 +153,43 @@ func (lb *lb) startListen() error {
 				return
 			}
 			defer unix.Close(cfd)
+			defer unix.Close(nfd)
 			lb.pipe(nfd, cfd, exit)
-			// go func() {
-			// 	buf := make([]byte, 9000)
-			// 	for {
-			// 		n, err := unix.Read(nfd, buf)
-			// 		if err != nil {
-			// 			log.Printf("error: %s\n", err)
-			// 			exit <- 1
-			// 			return
-			// 		}
-			// 		log.Printf("rcv: %d\n", n)
-			// 		if n == 0 {
-			// 			exit <- 1
-			// 			return
-			// 		}
-			// 	}
-			// }()
+
+			go func() {
+				rcvLBNet[fmt.Sprintf("[%s]:%d", addr, port)] = make(chan int)
+				defer unix.Close(cfd)
+				defer unix.Close(nfd)
+				<-rcvLBNet[fmt.Sprintf("[%s]:%d", addr, port)]
+				upstream, downstream, err := lb.createRepairInfo(nfd, cfd)
+				if err != nil {
+					log.Printf("error: %s\n", err)
+					return
+				}
+				upstreamJSON, err := json.Marshal(upstream)
+				if err != nil {
+					log.Printf("error: %s\n", err)
+					return
+				}
+				downstreamJSON, err := json.Marshal(downstream)
+				if err != nil {
+					log.Printf("error: %s\n", err)
+					return
+				}
+				lbnet.Send([]byte(fmt.Sprintf("%s %d %s %s", addr, port, upstreamJSON, downstreamJSON)))
+				delete(rcvLBNet, fmt.Sprintf("[%s]:%d", addr, port))
+				lb.hook.CloseEvent(addr, uint16(port), time.Second)
+			}()
+
 			<-exit
 		}
 	})
 	lb.hook.HandleFunc(func(ip net.IP, port uint16) {
 		log.Printf("search lbnet: [%s]:%d\n", ip, port)
-		lbnet.Send([]byte(fmt.Sprintf("%s %d", ip, port)))
+		err := lbnet.Send([]byte(fmt.Sprintf("%s %d", ip, port)))
+		if err != nil {
+			log.Printf("error: %s\n", err)
+		}
 	})
 
 	go func() {
@@ -218,42 +232,27 @@ func (lb *lb) startListen() error {
 
 				go func() {
 					rcvLBNet[fmt.Sprintf("[%s]:%d", ip, sa6.Port)] = make(chan int)
+					defer unix.Close(cfd)
+					defer unix.Close(nfd)
 					<-rcvLBNet[fmt.Sprintf("[%s]:%d", ip, sa6.Port)]
-					repairUpstream, err := lb.destroy(nfd)
+					upstream, downstream, err := lb.createRepairInfo(nfd, cfd)
 					if err != nil {
 						log.Printf("error: %s\n", err)
 						return
 					}
-					log.Printf("TCP_REPAIR success")
-					repairUpstreamJSON, err := json.Marshal(repairUpstream)
+					upstreamJSON, err := json.Marshal(upstream)
 					if err != nil {
 						log.Printf("error: %s\n", err)
 						return
 					}
-
-					sa, err := unix.Getsockname(cfd)
+					downstreamJSON, err := json.Marshal(downstream)
 					if err != nil {
 						log.Printf("error: %s\n", err)
 						return
 					}
-
-					csa6, ok := sa.(*unix.SockaddrInet6)
-					if !ok {
-						log.Printf("error: SockaddrInet6")
-						return
-					}
-
-					repairDownstream, err := lb.destroy(cfd)
-					if err != nil {
-						log.Printf("error: %s\n", err)
-						return
-					}
-					repairDownstream.Sport = uint16(csa6.Port)
-					repairDownstream.Dport = lb.backend.Port
-					repairDownstream.Daddr = lb.backend.Hosts[0]
-					repairDownstreamJSON, err := json.Marshal(repairDownstream)
-
-					lbnet.Send([]byte(fmt.Sprintf("%s %d %s %s", ip, sa6.Port, repairUpstreamJSON, repairDownstreamJSON)))
+					lbnet.Send([]byte(fmt.Sprintf("%s %d %s %s", ip, sa6.Port, upstreamJSON, downstreamJSON)))
+					delete(rcvLBNet, fmt.Sprintf("[%s]:%d", ip, sa6.Port))
+					lb.hook.CloseEvent(ip, uint16(sa6.Port), time.Second)
 				}()
 
 				<-exit
@@ -403,4 +402,33 @@ func (lb *lb) pipe(nfd int, cfd int, exit chan int) {
 			}
 		}
 	}()
+}
+
+func (lb *lb) createRepairInfo(nfd int, cfd int) (TCPRepair, TCPRepair, error) {
+
+	repairUpstream, err := lb.destroy(nfd)
+	if err != nil {
+		return TCPRepair{}, TCPRepair{}, err
+	}
+	log.Printf("TCP_REPAIR success")
+
+	sa, err := unix.Getsockname(cfd)
+	if err != nil {
+		return TCPRepair{}, TCPRepair{}, err
+	}
+
+	csa6, ok := sa.(*unix.SockaddrInet6)
+	if !ok {
+		return TCPRepair{}, TCPRepair{}, err
+	}
+
+	repairDownstream, err := lb.destroy(cfd)
+	if err != nil {
+		return TCPRepair{}, TCPRepair{}, err
+	}
+	repairDownstream.Sport = uint16(csa6.Port)
+	repairDownstream.Dport = lb.backend.Port
+	repairDownstream.Daddr = lb.backend.Hosts[0]
+
+	return repairUpstream, repairDownstream, nil
 }

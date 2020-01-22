@@ -38,7 +38,7 @@ func newLBNetwork(config LBNetworkConfig) (*LBNetwork, error) {
 			}
 			if !remote.IP.Equal(ln.source) {
 				for _, handler := range ln.handler {
-					handler(buffer[:n], remote.IP)
+					go handler(buffer[:n], remote.IP)
 				}
 			}
 		}
