@@ -80,28 +80,30 @@ sleep 1
 # ip netns exec router ip -6 addr add fe80::2/64 dev router-lb1
 # ip netns exec router ip -6 addr add fe80::2/64 dev router-lb2
 
-ip netns exec server ip -6 addr add fd12::1/60 dev server-lb1
-ip netns exec server ip -6 addr add fd13::1/64 dev server-lb2
-ip netns exec lb1 ip -6 addr add fd12::2/64 dev lb1-server
-ip netns exec lb1 ip -6 addr add fd24::1/64 dev lb1-router
-ip netns exec lb1 ip -6 addr add fd23::1/64 dev lb1-lb2
-ip netns exec lb2 ip -6 addr add fd13::2/64 dev lb2-server
-ip netns exec lb2 ip -6 addr add fd34::1/64 dev lb2-router
-ip netns exec lb2 ip -6 addr add fd23::2/64 dev lb2-lb1
-ip netns exec router ip -6 addr add fd24::2/64 dev router-lb1
-ip netns exec router ip -6 addr add fd34::2/64 dev router-lb2
-ip netns exec router ip -6 addr add fd45::1/64 dev router-client
-ip netns exec client ip -6 addr add fd45::2/64 dev client-router
+ip netns exec server ip -6 addr add fc12::1/60 dev server-lb1
+ip netns exec server ip -6 addr add fc13::1/64 dev server-lb2
+ip netns exec lb1 ip -6 addr add fc12::2/64 dev lb1-server
+ip netns exec lb1 ip -6 addr add fc24::1/64 dev lb1-router
+ip netns exec lb1 ip -6 addr add fc23::1/64 dev lb1-lb2
+ip netns exec lb2 ip -6 addr add fc13::2/64 dev lb2-server
+ip netns exec lb2 ip -6 addr add fc34::1/64 dev lb2-router
+ip netns exec lb2 ip -6 addr add fc23::2/64 dev lb2-lb1
+ip netns exec router ip -6 addr add fc24::2/64 dev router-lb1
+ip netns exec router ip -6 addr add fc34::2/64 dev router-lb2
+ip netns exec router ip -6 addr add fc45::1/64 dev router-client
+ip netns exec client ip -6 addr add fc45::2/64 dev client-router
 
-ip netns exec server ip -6 addr add fd00::1/128 dev lo
+ip netns exec server ip -6 addr add fc00::1/128 dev lo
 
-ip netns exec lb1 ip -6 addr add fd00::2/128 dev lo
-ip netns exec lb1 ip -6 addr add fd01::1/128 dev lo #vip
+ip netns exec lb1 ip -6 addr add fc00::2/128 dev lo
+ip netns exec lb1 ip -6 addr add fc01::1/128 dev lo #vip
+ip netns exec lb1 ip -6 route add local fc0a::/64 dev lo #anyIP
 
-ip netns exec lb2 ip -6 addr add fd00::3/128 dev lo
-ip netns exec lb2 ip -6 addr add fd01::1/128 dev lo #vip
+ip netns exec lb2 ip -6 addr add fc00::3/128 dev lo
+ip netns exec lb2 ip -6 addr add fc01::1/128 dev lo #vip
+ip netns exec lb2 ip -6 route add local fc0b::/64 dev lo #anyIP
 
-ip netns exec router ip -6 addr add fd00::4/128 dev lo
+ip netns exec router ip -6 addr add fc00::4/128 dev lo
 
 sleep 2
 
@@ -122,7 +124,7 @@ ip netns exec client ping -I client-router ff02::1 -c 1 &
 
 sleep 1
 
-ip netns exec client ip -6 route add ::/0 via fd45::1
+ip netns exec client ip -6 route add ::/0 via fc45::1
 
 if [ ! -e ./run ]; then
   mkdir run
@@ -156,29 +158,29 @@ echo $! > run/router.pid
 
 sleep 1
 
-ip netns exec server ./gobgp/gobgp global rib add fd12::/64 -a ipv6
-ip netns exec server ./gobgp/gobgp global rib add fd13::/64 -a ipv6
+ip netns exec server ./gobgp/gobgp global rib add fc12::/64 -a ipv6
+ip netns exec server ./gobgp/gobgp global rib add fc13::/64 -a ipv6
 
-ip netns exec lb1 ./gobgp/gobgp global rib add fd12::/64 -a ipv6
-ip netns exec lb1 ./gobgp/gobgp global rib add fd24::/64 -a ipv6
+ip netns exec lb1 ./gobgp/gobgp global rib add fc12::/64 -a ipv6
+ip netns exec lb1 ./gobgp/gobgp global rib add fc24::/64 -a ipv6
 
-ip netns exec lb2 ./gobgp/gobgp global rib add fd13::/64 -a ipv6
-ip netns exec lb2 ./gobgp/gobgp global rib add fd34::/64 -a ipv6
+ip netns exec lb2 ./gobgp/gobgp global rib add fc13::/64 -a ipv6
+ip netns exec lb2 ./gobgp/gobgp global rib add fc34::/64 -a ipv6
 
-ip netns exec router ./gobgp/gobgp global rib add fd24::/64 -a ipv6
-ip netns exec router ./gobgp/gobgp global rib add fd34::/64 -a ipv6
-ip netns exec router ./gobgp/gobgp global rib add fd45::/64 -a ipv6
+ip netns exec router ./gobgp/gobgp global rib add fc24::/64 -a ipv6
+ip netns exec router ./gobgp/gobgp global rib add fc34::/64 -a ipv6
+ip netns exec router ./gobgp/gobgp global rib add fc45::/64 -a ipv6
 
 ip netns exec server ./gobgp/gobgp global rib add 192.168.0.1/32
-ip netns exec server ./gobgp/gobgp global rib add fd00::1/128 -a ipv6
+ip netns exec server ./gobgp/gobgp global rib add fc00::1/128 -a ipv6
 ip netns exec lb1 ./gobgp/gobgp global rib add 192.168.0.2/32
-ip netns exec lb1 ./gobgp/gobgp global rib add fd00::2/128 -a ipv6
-ip netns exec lb1 ./gobgp/gobgp global rib add fd01::1/128 -a ipv6 #vip
+ip netns exec lb1 ./gobgp/gobgp global rib add fc00::2/128 -a ipv6
+ip netns exec lb1 ./gobgp/gobgp global rib add fc01::1/128 -a ipv6 #vip
 ip netns exec lb2 ./gobgp/gobgp global rib add 192.168.0.3/32
-ip netns exec lb2 ./gobgp/gobgp global rib add fd00::3/128 -a ipv6
-# ip netns exec lb2 ./gobgp/gobgp global rib add fd01::1/128 -a ipv6 #vip
+ip netns exec lb2 ./gobgp/gobgp global rib add fc00::3/128 -a ipv6
+# ip netns exec lb2 ./gobgp/gobgp global rib add fc01::1/128 -a ipv6 #vip
 ip netns exec router ./gobgp/gobgp global rib add 192.168.0.4/32
-ip netns exec router ./gobgp/gobgp global rib add fd00::4/128 -a ipv6
+ip netns exec router ./gobgp/gobgp global rib add fc00::4/128 -a ipv6
 
 ip netns exec lb1 ip6tables -A OUTPUT -p tcp --tcp-flags ALL RST --sport 8080 -j DROP
 ip netns exec lb2 ip6tables -A OUTPUT -p tcp --tcp-flags ALL RST --sport 8080 -j DROP

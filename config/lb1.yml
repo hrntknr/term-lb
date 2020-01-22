@@ -11,17 +11,17 @@ zebra:
 neighbors:
   - config:
       # neighbor-interface: lb1-server
-      neighbor-address: fd12::1
+      neighbor-address: fc12::1
       peer-as: 65001
     transport:
       config:
         passive-mode: false
-        local-address: fd12::2
+        local-address: fc12::2
   - config:
       # neighbor-interface: lb1-router
-      neighbor-address: fd24::2
+      neighbor-address: fc24::2
       peer-as: 65004
     transport:
       config:
         passive-mode: false
-        local-address: fd24::1
+        local-address: fc24::1
