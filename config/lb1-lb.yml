@@ -5,9 +5,10 @@ backends:
   listen: 8080
   vip: fc01::1
   interface: lb1-router
+  addressRange: fca1::/64
 lbNetwork:
   network: "[ff02::1%lb1-lb2]:3000"
   source: "[fc23::1%lb1-lb2]:3001"
   commands:
-    standby: ip netns exec lb2 ./gobgp/gobgp global rib del fc01::1/128 -a ipv6
-    active: ip netns exec lb2 ./gobgp/gobgp global rib add fc01::1/128 -a ipv6
+    standby: ../gobgp/gobgp global rib del %s/128 -a 6
+    active: ../gobgp/gobgp global rib add %s/128 -a 6

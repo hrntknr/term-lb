@@ -97,11 +97,11 @@ ip netns exec server ip -6 addr add fc00::1/128 dev lo
 
 ip netns exec lb1 ip -6 addr add fc00::2/128 dev lo
 ip netns exec lb1 ip -6 addr add fc01::1/128 dev lo #vip
-ip netns exec lb1 ip -6 route add local fc0a::/64 dev lo #anyIP
+ip netns exec lb1 ip -6 route add local fca0::/12 dev lo #anyIP
 
 ip netns exec lb2 ip -6 addr add fc00::3/128 dev lo
 ip netns exec lb2 ip -6 addr add fc01::1/128 dev lo #vip
-ip netns exec lb2 ip -6 route add local fc0b::/64 dev lo #anyIP
+ip netns exec lb2 ip -6 route add local fca0::/12 dev lo #anyIP
 
 ip netns exec router ip -6 addr add fc00::4/128 dev lo
 
@@ -176,11 +176,15 @@ ip netns exec server ./gobgp/gobgp global rib add fc00::1/128 -a ipv6
 ip netns exec lb1 ./gobgp/gobgp global rib add 192.168.0.2/32
 ip netns exec lb1 ./gobgp/gobgp global rib add fc00::2/128 -a ipv6
 ip netns exec lb1 ./gobgp/gobgp global rib add fc01::1/128 -a ipv6 #vip
+ip netns exec lb1 ./gobgp/gobgp global rib add fca1::/64 -a ipv6 #anyIP
 ip netns exec lb2 ./gobgp/gobgp global rib add 192.168.0.3/32
-ip netns exec lb2 ./gobgp/gobgp global rib add fc00::3/128 -a ipv6
+ip netns exec lb2 ./gobgp/gobgp global rib add fc11::3/128 -a ipv6
 # ip netns exec lb2 ./gobgp/gobgp global rib add fc01::1/128 -a ipv6 #vip
+ip netns exec lb2 ./gobgp/gobgp global rib add fca2::/64 -a ipv6 #anyIP
 ip netns exec router ./gobgp/gobgp global rib add 192.168.0.4/32
 ip netns exec router ./gobgp/gobgp global rib add fc00::4/128 -a ipv6
 
 ip netns exec lb1 ip6tables -A OUTPUT -p tcp --tcp-flags ALL RST --sport 8080 -j DROP
 ip netns exec lb2 ip6tables -A OUTPUT -p tcp --tcp-flags ALL RST --sport 8080 -j DROP
+ip netns exec lb1 ip6tables -A OUTPUT -p tcp --tcp-flags ALL RST --dport 8080 -j DROP
+ip netns exec lb2 ip6tables -A OUTPUT -p tcp --tcp-flags ALL RST --dport 8080 -j DROP

@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"net"
 	"time"
 
@@ -55,7 +56,7 @@ func newTCPHook(pcapIf string, port uint16) (*TCPHook, error) {
 				continue
 			}
 
-			fmt.Printf("unknown: [%s]:%d\n", ipPacket.SrcIP, tcpPacket.SrcPort)
+			log.Printf("unknown: [%s]:%d\n", ipPacket.SrcIP, tcpPacket.SrcPort)
 			hook.connections[fmt.Sprintf("[%s]:%d", ipPacket.SrcIP, tcpPacket.SrcPort)] = Connection{
 				State: StateMigration,
 				IP:    ipPacket.SrcIP,

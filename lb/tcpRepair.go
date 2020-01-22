@@ -13,6 +13,7 @@ import (
 )
 
 type TCPRepair struct {
+	Saddr  net.IP          `json:"saddr"`
 	Sport  uint16          `json:"sport"`
 	Daddr  net.IP          `json:"daddr"`
 	Dport  uint16          `json:"dport"`

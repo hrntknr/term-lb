@@ -8,6 +8,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"os/exec"
 	"os/signal"
 	"strconv"
 	"strings"
@@ -26,16 +27,23 @@ type Config struct {
 }
 
 type Backend struct {
-	Hosts     []net.IP `yaml:"hosts"`
-	Port      uint16   `yaml:"port"`
-	Listen    uint16   `yaml:"listen"`
-	Vip       net.IP   `yaml:"vip"`
-	Interface string   `yaml:"interface"`
+	Hosts        []net.IP `yaml:"hosts"`
+	Port         uint16   `yaml:"port"`
+	Listen       uint16   `yaml:"listen"`
+	Vip          net.IP   `yaml:"vip"`
+	Interface    string   `yaml:"interface"`
+	AddressRange string   `yaml:"addressRange"`
 }
 
 type LBNetworkConfig struct {
-	Network string `yaml:"network"`
-	Source  string `yaml:"source"`
+	Network  string        `yaml:"network"`
+	Source   string        `yaml:"source"`
+	Commands CommandConfig `yaml:"commands"`
+}
+
+type CommandConfig struct {
+	Active  string `yaml:"active"`
+	Standby string `yaml:"standby"`
 }
 
 func main() {
@@ -63,7 +71,10 @@ func main() {
 				return
 			}
 
-			lb := newLB(backend, currentConfig, hook)
+			lb, err := newLB(backend, currentConfig, hook)
+			if err != nil {
+				log.Printf("error: %s\n", err)
+			}
 			if err := lb.startListen(); err != nil {
 				log.Printf("error: %s\n", err)
 			}
@@ -73,18 +84,24 @@ func main() {
 	wg.Wait()
 }
 
-func newLB(backend Backend, config Config, hook *TCPHook) *lb {
-	return &lb{
-		backend: backend,
-		config:  config,
-		hook:    hook,
+func newLB(backend Backend, config Config, hook *TCPHook) (*lb, error) {
+	addrManager, err := newAddrManager(backend.AddressRange)
+	if err != nil {
+		return nil, err
 	}
+	return &lb{
+		backend:     backend,
+		config:      config,
+		hook:        hook,
+		addrManager: addrManager,
+	}, nil
 }
 
 type lb struct {
-	backend Backend
-	config  Config
-	hook    *TCPHook
+	backend     Backend
+	config      Config
+	hook        *TCPHook
+	addrManager *AddrManager
 }
 
 func (lb *lb) startListen() error {
@@ -136,7 +153,7 @@ func (lb *lb) startListen() error {
 				return
 			}
 
-			nfd, err := lb.repair(lb.backend.Vip, lb.backend.Listen, addr, uint16(port), repairUpstream)
+			nfd, err := lb.repair(lb.backend.Vip, lb.backend.Listen, addr, uint16(port), repairUpstream, false)
 			if err != nil {
 				log.Printf("error: %s\n", err)
 				return
@@ -147,13 +164,22 @@ func (lb *lb) startListen() error {
 				log.Printf("error: %s\n", err)
 				return
 			}
-			cfd, err := lb.repair(lb.backend.Vip, repairDownstream.Sport, repairDownstream.Daddr, repairDownstream.Dport, repairDownstream)
+			cfd, err := lb.repair(repairDownstream.Saddr, repairDownstream.Sport, repairDownstream.Daddr, repairDownstream.Dport, repairDownstream, true)
 			if err != nil {
 				log.Printf("error: %s\n", err)
 				return
 			}
 			defer unix.Close(cfd)
 			defer unix.Close(nfd)
+			go func() {
+				cmd := fmt.Sprintf(lb.config.LBNetwork.Commands.Active, repairDownstream.Saddr)
+				log.Printf("exec: %s\n", cmd)
+				err := exec.Command("sh", "-c", cmd).Run()
+				if err != nil {
+					log.Printf("warn: %s\n", err)
+				}
+			}()
+
 			lb.pipe(nfd, cfd, exit)
 
 			go func() {
@@ -161,6 +187,14 @@ func (lb *lb) startListen() error {
 				defer unix.Close(cfd)
 				defer unix.Close(nfd)
 				<-rcvLBNet[fmt.Sprintf("[%s]:%d", addr, port)]
+				go func() {
+					cmd := fmt.Sprintf(lb.config.LBNetwork.Commands.Standby, repairDownstream.Saddr)
+					log.Printf("exec: %s\n", cmd)
+					err := exec.Command("sh", "-c", cmd).Run()
+					if err != nil {
+						log.Printf("error: %s\n", err)
+					}
+				}()
 				upstream, downstream, err := lb.createRepairInfo(nfd, cfd)
 				if err != nil {
 					log.Printf("error: %s\n", err)
@@ -210,10 +244,20 @@ func (lb *lb) startListen() error {
 					log.Printf("error: %s\n", err)
 					return
 				}
-				var vip [16]byte
-				copy(vip[:], lb.backend.Vip)
+				if err := unix.SetsockoptInt(cfd, unix.SOL_IP, unix.IP_FREEBIND, 1); err != nil {
+					log.Printf("error: %s\n", err)
+					return
+				}
+				laddr, err := lb.addrManager.releaseIP()
+				if err != nil {
+					log.Printf("error: %s\n", err)
+					return
+				}
+				log.Printf("use %s to downstream\n", laddr)
+				var addr [16]byte
+				copy(addr[:], laddr)
 				if err := unix.Bind(cfd, &unix.SockaddrInet6{
-					Addr: vip,
+					Addr: addr,
 				}); err != nil {
 					log.Printf("error: %s\n", err)
 					return
@@ -275,12 +319,10 @@ func (lb *lb) destroy(nfd int) (TCPRepair, error) {
 	if err != nil {
 		return TCPRepair{}, nil
 	}
-	fmt.Printf("window: %v\n", window)
 	mss, err := unix.GetsockoptInt(nfd, unix.IPPROTO_TCP, unix.TCP_MAXSEG)
 	if err != nil {
 		return TCPRepair{}, nil
 	}
-	fmt.Printf("mss: %d\n", mss)
 	if err := unix.SetsockoptInt(nfd, unix.IPPROTO_TCP, unix.TCP_REPAIR_QUEUE, TCP_SEND_QUEUE); err != nil {
 		return TCPRepair{}, nil
 	}
@@ -288,7 +330,6 @@ func (lb *lb) destroy(nfd int) (TCPRepair, error) {
 	if err != nil {
 		return TCPRepair{}, nil
 	}
-	fmt.Printf("sndSeq: %d\n", sndSeq)
 	if err := unix.SetsockoptInt(nfd, unix.IPPROTO_TCP, unix.TCP_REPAIR_QUEUE, TCP_RECV_QUEUE); err != nil {
 		return TCPRepair{}, nil
 	}
@@ -307,7 +348,7 @@ func (lb *lb) destroy(nfd int) (TCPRepair, error) {
 	return repair, nil
 }
 
-func (lb *lb) repair(saddr net.IP, sport uint16, daddr net.IP, dport uint16, repair TCPRepair) (int, error) {
+func (lb *lb) repair(saddr net.IP, sport uint16, daddr net.IP, dport uint16, repair TCPRepair, anyIP bool) (int, error) {
 	nfd, err := unix.Socket(unix.AF_INET6, unix.SOCK_STREAM, 0)
 	if err != nil {
 		return 0, err
@@ -335,6 +376,11 @@ func (lb *lb) repair(saddr net.IP, sport uint16, daddr net.IP, dport uint16, rep
 	}
 	if err := SetsockoptTcpRepairWindow(nfd, unix.IPPROTO_TCP, unix.TCP_REPAIR_WINDOW, repair.Window); err != nil {
 		return 0, err
+	}
+	if anyIP {
+		if err := unix.SetsockoptInt(nfd, unix.SOL_IP, unix.IP_FREEBIND, 1); err != nil {
+			return 0, err
+		}
 	}
 	var ip [16]byte
 	copy(ip[:], saddr)
@@ -426,6 +472,7 @@ func (lb *lb) createRepairInfo(nfd int, cfd int) (TCPRepair, TCPRepair, error) {
 	if err != nil {
 		return TCPRepair{}, TCPRepair{}, err
 	}
+	repairDownstream.Saddr = net.IP(csa6.Addr[:])
 	repairDownstream.Sport = uint16(csa6.Port)
 	repairDownstream.Dport = lb.backend.Port
 	repairDownstream.Daddr = lb.backend.Hosts[0]
