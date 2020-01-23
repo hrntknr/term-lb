@@ -142,11 +142,11 @@ ip netns exec router $ZEBRA_PATH -A 127.0.0.1 -i $(pwd)/run/router_zebra.pid -z 
 sleep 3
 
 # ip netns exec server python3 ./server.py &
-(
-  cd eval_server
-  ip netns exec server go run *.go &
-  echo $! > ../run/server_http.pid
-)
+# (
+#   cd eval_server
+#   ip netns exec server go run *.go &
+#   echo $! > ../run/server_http.pid
+# )
 
 ip netns exec server ./gobgp/gobgpd -t yaml -f config/server.yml &
 echo $! > run/server.pid
