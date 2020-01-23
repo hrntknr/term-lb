@@ -30,15 +30,17 @@ func newLBNetwork(config LBNetworkConfig) (*LBNetwork, error) {
 		handler:  []func([]byte, net.IP){},
 	}
 	go func() {
-		buffer := make([]byte, 1500)
+		buffer := make([]byte, 9000)
 		for {
 			n, remote, err := ln.receiver.ReadFromUDP(buffer)
 			if err != nil {
 				log.Printf("error: %s\n", err)
 			}
 			if !remote.IP.Equal(ln.source) {
+				buf := make([]byte, n)
+				copy(buf, buffer[:n])
 				for _, handler := range ln.handler {
-					go handler(buffer[:n], remote.IP)
+					go handler(buf, remote.IP)
 				}
 			}
 		}

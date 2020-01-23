@@ -128,11 +128,14 @@ func (lb *lb) startListen() error {
 		return err
 	}
 	rcvLBNet := map[string]chan int{}
+	rcvLBNetMutex := new(sync.Mutex)
 	lbnet.HandleFunc(func(buf []byte, remote net.IP) {
 		log.Printf("rcv lbnet: %s\n", buf)
 		commands := strings.Split(string(buf), " ")
 		if len(commands) == 2 {
+			rcvLBNetMutex.Lock()
 			ch, ok := rcvLBNet[fmt.Sprintf("[%s]:%s", commands[0], commands[1])]
+			rcvLBNetMutex.Unlock()
 			if ok {
 				ch <- 0
 			} else {
@@ -183,10 +186,13 @@ func (lb *lb) startListen() error {
 			lb.pipe(nfd, cfd, exit)
 
 			go func() {
-				rcvLBNet[fmt.Sprintf("[%s]:%d", addr, port)] = make(chan int)
+				ch := make(chan int)
+				rcvLBNetMutex.Lock()
+				rcvLBNet[fmt.Sprintf("[%s]:%d", addr, port)] = ch
+				rcvLBNetMutex.Unlock()
 				defer unix.Close(cfd)
 				defer unix.Close(nfd)
-				<-rcvLBNet[fmt.Sprintf("[%s]:%d", addr, port)]
+				<-ch
 				go func() {
 					cmd := fmt.Sprintf(lb.config.LBNetwork.Commands.Standby, repairDownstream.Saddr)
 					log.Printf("exec: %s\n", cmd)
@@ -211,7 +217,9 @@ func (lb *lb) startListen() error {
 					return
 				}
 				lbnet.Send([]byte(fmt.Sprintf("%s %d %s %s", addr, port, upstreamJSON, downstreamJSON)))
+				rcvLBNetMutex.Lock()
 				delete(rcvLBNet, fmt.Sprintf("[%s]:%d", addr, port))
+				rcvLBNetMutex.Unlock()
 				lb.hook.CloseEvent(addr, uint16(port), time.Second)
 			}()
 
@@ -226,84 +234,92 @@ func (lb *lb) startListen() error {
 		}
 	})
 
-	go func() {
-		for {
-			nfd, sa, err := unix.Accept(fd)
-			if err != nil {
-				log.Printf("error: %s\n", err)
-			}
-			exit := make(chan int, 1)
-			sa6 := sa.(*unix.SockaddrInet6)
-			ip := net.IP(sa6.Addr[:])
-			lb.hook.AcceptEvent(ip, uint16(sa6.Port))
-
-			go func() {
-				defer unix.Close(nfd)
-				cfd, err := unix.Socket(unix.AF_INET6, unix.SOCK_STREAM, unix.IPPROTO_TCP)
+	for i := 0; i < 100; i++ {
+		go func() {
+			for {
+				nfd, sa, err := unix.Accept(fd)
 				if err != nil {
 					log.Printf("error: %s\n", err)
-					return
 				}
-				if err := unix.SetsockoptInt(cfd, unix.SOL_IP, unix.IP_FREEBIND, 1); err != nil {
-					log.Printf("error: %s\n", err)
-					return
-				}
-				laddr, err := lb.addrManager.releaseIP()
-				if err != nil {
-					log.Printf("error: %s\n", err)
-					return
-				}
-				log.Printf("use %s to downstream\n", laddr)
-				var addr [16]byte
-				copy(addr[:], laddr)
-				if err := unix.Bind(cfd, &unix.SockaddrInet6{
-					Addr: addr,
-				}); err != nil {
-					log.Printf("error: %s\n", err)
-					return
-				}
-				var host [16]byte
-				copy(host[:], lb.backend.Hosts[0])
-				if err := unix.Connect(cfd, &unix.SockaddrInet6{
-					Addr: host,
-					Port: int(lb.backend.Port),
-				}); err != nil {
-					log.Printf("error: %s\n", err)
-					return
-				}
-				defer unix.Close(cfd)
-				lb.pipe(nfd, cfd, exit)
+				exit := make(chan int, 1)
+				sa6 := sa.(*unix.SockaddrInet6)
+				ip := net.IP(sa6.Addr[:])
+				go lb.hook.AcceptEvent(ip, uint16(sa6.Port))
 
 				go func() {
-					rcvLBNet[fmt.Sprintf("[%s]:%d", ip, sa6.Port)] = make(chan int)
-					defer unix.Close(cfd)
 					defer unix.Close(nfd)
-					<-rcvLBNet[fmt.Sprintf("[%s]:%d", ip, sa6.Port)]
-					upstream, downstream, err := lb.createRepairInfo(nfd, cfd)
+					cfd, err := unix.Socket(unix.AF_INET6, unix.SOCK_STREAM, unix.IPPROTO_TCP)
 					if err != nil {
 						log.Printf("error: %s\n", err)
 						return
 					}
-					upstreamJSON, err := json.Marshal(upstream)
+					if err := unix.SetsockoptInt(cfd, unix.SOL_IP, unix.IP_FREEBIND, 1); err != nil {
+						log.Printf("error: %s\n", err)
+						return
+					}
+					laddr, err := lb.addrManager.releaseIP()
 					if err != nil {
 						log.Printf("error: %s\n", err)
 						return
 					}
-					downstreamJSON, err := json.Marshal(downstream)
-					if err != nil {
+					log.Printf("use %s to downstream\n", laddr)
+					var addr [16]byte
+					copy(addr[:], laddr)
+					if err := unix.Bind(cfd, &unix.SockaddrInet6{
+						Addr: addr,
+					}); err != nil {
 						log.Printf("error: %s\n", err)
 						return
 					}
-					lbnet.Send([]byte(fmt.Sprintf("%s %d %s %s", ip, sa6.Port, upstreamJSON, downstreamJSON)))
-					delete(rcvLBNet, fmt.Sprintf("[%s]:%d", ip, sa6.Port))
-					lb.hook.CloseEvent(ip, uint16(sa6.Port), time.Second)
-				}()
+					var host [16]byte
+					copy(host[:], lb.backend.Hosts[0])
+					if err := unix.Connect(cfd, &unix.SockaddrInet6{
+						Addr: host,
+						Port: int(lb.backend.Port),
+					}); err != nil {
+						log.Printf("error: %s\n", err)
+						return
+					}
+					defer unix.Close(cfd)
+					lb.pipe(nfd, cfd, exit)
 
-				<-exit
-				lb.hook.CloseEvent(ip, uint16(sa6.Port), 1*time.Second)
-			}()
-		}
-	}()
+					go func() {
+						ch := make(chan int)
+						rcvLBNetMutex.Lock()
+						rcvLBNet[fmt.Sprintf("[%s]:%d", ip, sa6.Port)] = ch
+						rcvLBNetMutex.Unlock()
+						defer unix.Close(cfd)
+						defer unix.Close(nfd)
+						<-ch
+						log.Printf("rcv ch: [%s]:%d", ip, sa6.Port)
+						upstream, downstream, err := lb.createRepairInfo(nfd, cfd)
+						if err != nil {
+							log.Printf("error: %s\n", err)
+							return
+						}
+						upstreamJSON, err := json.Marshal(upstream)
+						if err != nil {
+							log.Printf("error: %s\n", err)
+							return
+						}
+						downstreamJSON, err := json.Marshal(downstream)
+						if err != nil {
+							log.Printf("error: %s\n", err)
+							return
+						}
+						lbnet.Send([]byte(fmt.Sprintf("%s %d %s %s", ip, sa6.Port, upstreamJSON, downstreamJSON)))
+						rcvLBNetMutex.Lock()
+						delete(rcvLBNet, fmt.Sprintf("[%s]:%d", ip, sa6.Port))
+						rcvLBNetMutex.Unlock()
+						lb.hook.CloseEvent(ip, uint16(sa6.Port), time.Second)
+					}()
+
+					<-exit
+					lb.hook.CloseEvent(ip, uint16(sa6.Port), 1*time.Second)
+				}()
+			}
+		}()
+	}
 	<-quit
 	unix.Close(fd)
 	return nil
@@ -410,17 +426,17 @@ func (lb *lb) pipe(nfd int, cfd int, exit chan int) {
 		for {
 			n, err := unix.Read(nfd, buf)
 			if err != nil {
-				log.Printf("error: %s\n", err)
+				log.Printf("error1.1: %s\n", err)
 				exit <- 1
 				return
 			}
-			log.Printf("rcv: %d\n", n)
+			log.Printf("rcv1: %d\n", n)
 			if n == 0 {
 				exit <- 1
 				return
 			}
 			if _, err := unix.Write(cfd, buf[:n]); err != nil {
-				log.Printf("error: %s\n", err)
+				log.Printf("error1.2: %s\n", err)
 				exit <- 1
 				return
 			}
@@ -432,17 +448,17 @@ func (lb *lb) pipe(nfd int, cfd int, exit chan int) {
 		for {
 			n, err := unix.Read(cfd, buf)
 			if err != nil {
-				log.Printf("error: %s\n", err)
+				log.Printf("error2.1: %s\n", err)
 				exit <- 1
 				return
 			}
-			log.Printf("rcv: %d\n", n)
+			log.Printf("rcv2: %d\n", n)
 			if n == 0 {
 				exit <- 1
 				return
 			}
 			if _, err := unix.Write(nfd, buf[:n]); err != nil {
-				log.Printf("error: %s\n", err)
+				log.Printf("error2.2: %s\n", err)
 				exit <- 1
 				return
 			}

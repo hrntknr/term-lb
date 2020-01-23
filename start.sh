@@ -142,6 +142,7 @@ ip netns exec router $ZEBRA_PATH -A 127.0.0.1 -i $(pwd)/run/router_zebra.pid -z 
 sleep 3
 
 # ip netns exec server python3 ./server.py &
+ip netns exec server ncat -m 10000 -e /bin/cat -k -l 8080 &
 echo $! > run/server_http.pid
 
 ip netns exec server ./gobgp/gobgpd -t yaml -f config/server.yml &
@@ -158,31 +159,27 @@ echo $! > run/router.pid
 
 sleep 1
 
-ip netns exec server ./gobgp/gobgp global rib add fc12::/64 -a ipv6
-ip netns exec server ./gobgp/gobgp global rib add fc13::/64 -a ipv6
+ip netns exec server ./gobgp/gobgp global rib add fc12::/64 -a 6
+ip netns exec server ./gobgp/gobgp global rib add fc13::/64 -a 6
 
-ip netns exec lb1 ./gobgp/gobgp global rib add fc12::/64 -a ipv6
-ip netns exec lb1 ./gobgp/gobgp global rib add fc24::/64 -a ipv6
+ip netns exec lb1 ./gobgp/gobgp global rib add fc12::/64 -a 6
+ip netns exec lb1 ./gobgp/gobgp global rib add fc24::/64 -a 6
 
-ip netns exec lb2 ./gobgp/gobgp global rib add fc13::/64 -a ipv6
-ip netns exec lb2 ./gobgp/gobgp global rib add fc34::/64 -a ipv6
+ip netns exec lb2 ./gobgp/gobgp global rib add fc13::/64 -a 6
+ip netns exec lb2 ./gobgp/gobgp global rib add fc34::/64 -a 6
 
-ip netns exec router ./gobgp/gobgp global rib add fc24::/64 -a ipv6
-ip netns exec router ./gobgp/gobgp global rib add fc34::/64 -a ipv6
-ip netns exec router ./gobgp/gobgp global rib add fc45::/64 -a ipv6
+ip netns exec router ./gobgp/gobgp global rib add fc24::/64 -a 6
+ip netns exec router ./gobgp/gobgp global rib add fc34::/64 -a 6
+ip netns exec router ./gobgp/gobgp global rib add fc45::/64 -a 6
 
-ip netns exec server ./gobgp/gobgp global rib add 192.168.0.1/32
-ip netns exec server ./gobgp/gobgp global rib add fc00::1/128 -a ipv6
-ip netns exec lb1 ./gobgp/gobgp global rib add 192.168.0.2/32
-ip netns exec lb1 ./gobgp/gobgp global rib add fc00::2/128 -a ipv6
-ip netns exec lb1 ./gobgp/gobgp global rib add fc01::1/128 -a ipv6 #vip
-ip netns exec lb1 ./gobgp/gobgp global rib add fca1::/64 -a ipv6 #anyIP
-ip netns exec lb2 ./gobgp/gobgp global rib add 192.168.0.3/32
-ip netns exec lb2 ./gobgp/gobgp global rib add fc11::3/128 -a ipv6
-# ip netns exec lb2 ./gobgp/gobgp global rib add fc01::1/128 -a ipv6 #vip
-ip netns exec lb2 ./gobgp/gobgp global rib add fca2::/64 -a ipv6 #anyIP
-ip netns exec router ./gobgp/gobgp global rib add 192.168.0.4/32
-ip netns exec router ./gobgp/gobgp global rib add fc00::4/128 -a ipv6
+ip netns exec server ./gobgp/gobgp global rib add fc00::1/128 -a 6
+ip netns exec lb1 ./gobgp/gobgp global rib add fc00::2/128 -a 6
+ip netns exec lb1 ./gobgp/gobgp global rib add fc01::1/128 -a 6 #vip
+ip netns exec lb1 ./gobgp/gobgp global rib add fca1::/64 -a 6 #anyIP
+ip netns exec lb2 ./gobgp/gobgp global rib add fc11::3/128 -a 6
+# ip netns exec lb2 ./gobgp/gobgp global rib add fc01::1/128 -a 6 #vip
+ip netns exec lb2 ./gobgp/gobgp global rib add fca2::/64 -a 6 #anyIP
+ip netns exec router ./gobgp/gobgp global rib add fc00::4/128 -a 6
 
 ip netns exec lb1 ip6tables -A OUTPUT -p tcp --tcp-flags ALL RST --sport 8080 -j DROP
 ip netns exec lb2 ip6tables -A OUTPUT -p tcp --tcp-flags ALL RST --sport 8080 -j DROP

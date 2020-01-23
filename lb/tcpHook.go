@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/google/gopacket"
@@ -29,9 +30,11 @@ func newTCPHook(pcapIf string, port uint16) (*TCPHook, error) {
 	if err != nil {
 		return nil, err
 	}
+	connMutex := new(sync.Mutex)
 
 	hook := &TCPHook{
 		connections: map[string]Connection{},
+		connMutex:   connMutex,
 	}
 
 	go func() {
@@ -52,16 +55,21 @@ func newTCPHook(pcapIf string, port uint16) (*TCPHook, error) {
 			if !ok {
 				continue
 			}
-			if _, ok := hook.connections[fmt.Sprintf("[%s]:%d", ipPacket.SrcIP, tcpPacket.SrcPort)]; ok {
+			hook.connMutex.Lock()
+			_, ok = hook.connections[fmt.Sprintf("[%s]:%d", ipPacket.SrcIP, tcpPacket.SrcPort)]
+			hook.connMutex.Unlock()
+			if ok {
 				continue
 			}
 
 			log.Printf("unknown: [%s]:%d\n", ipPacket.SrcIP, tcpPacket.SrcPort)
+			hook.connMutex.Lock()
 			hook.connections[fmt.Sprintf("[%s]:%d", ipPacket.SrcIP, tcpPacket.SrcPort)] = Connection{
 				State: StateMigration,
 				IP:    ipPacket.SrcIP,
 				Port:  uint16(tcpPacket.SrcPort),
 			}
+			hook.connMutex.Unlock()
 			for _, handler := range hook.handler {
 				handler(ipPacket.SrcIP, uint16(tcpPacket.SrcPort))
 			}
@@ -76,21 +84,25 @@ func (hook *TCPHook) HandleFunc(handler func(net.IP, uint16)) {
 
 func (hook *TCPHook) AcceptEvent(ip net.IP, port uint16) {
 	fmt.Printf("accept: [%s]:%d\n", ip, port)
-
+	hook.connMutex.Lock()
 	hook.connections[fmt.Sprintf("[%s]:%d", ip, port)] = Connection{
 		State: StateEstablish,
 		Port:  port,
 		IP:    ip,
 	}
+	hook.connMutex.Unlock()
 }
 func (hook *TCPHook) CloseEvent(ip net.IP, port uint16, margin time.Duration) {
 	go func() {
 		time.Sleep(margin)
+		hook.connMutex.Lock()
 		delete(hook.connections, fmt.Sprintf("[%s]:%d", ip, port))
+		hook.connMutex.Unlock()
 	}()
 }
 
 type TCPHook struct {
 	connections map[string]Connection
+	connMutex   *sync.Mutex
 	handler     []func(net.IP, uint16)
 }
